@@ -1,16 +1,21 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
+project(codecrafters_redis_cpp LANGUAGES CXX)
 
-project(redis-starter-cpp)
+# 使用 C++17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp)
+# 开启常用警告
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  add_compile_options(-Wall -Wextra -Wpedantic -Werror=return-type)
+elseif (MSVC)
+  add_compile_options(/W4)
+endif()
 
-set(CMAKE_CXX_STANDARD 23) # Enable the C++23 standard
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-
-find_package(Threads REQUIRED)
-find_package(asio CONFIG REQUIRED)
-
-add_executable(server ${SOURCE_FILES})
-
-target_link_libraries(server PRIVATE asio asio::asio)
-target_link_libraries(server PRIVATE Threads::Threads)
+# 可执行文件
+add_executable(redis_server
+  src/Server.cpp
+  src/net/Acceptor.cpp
+  src/net/EventLoop.cpp
+)
