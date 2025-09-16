@@ -35,5 +35,5 @@ int Acceptor::fd() const { return server_fd_; }
 
 int Acceptor::accept_one() {
   sockaddr_in cli{}; socklen_t len = sizeof(cli);
-  return ::accept(server_fd_, (sockaddr*)&cli, &len); // 先用阻塞版，下一步改非阻塞+epoll
+  return ::accept(server_fd_, (sockaddr*)&cli, &len); 
 }

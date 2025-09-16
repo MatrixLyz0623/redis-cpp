@@ -10,6 +10,8 @@ class EventLoop {
         
         bool add(int fd, uint32_t events);
         int wait(std::vector<epoll_event> & event, int timeout_ms = -1);
+        bool mod(int fd, uint32_t events);
+        bool del(int fd);
     private:
         int epfd_{-1};
 };

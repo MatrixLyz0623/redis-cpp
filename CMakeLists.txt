@@ -18,4 +18,5 @@ add_executable(redis_server
   src/Server.cpp
   src/net/Acceptor.cpp
   src/net/EventLoop.cpp
+  src/proto/RespParser.cpp
 )
