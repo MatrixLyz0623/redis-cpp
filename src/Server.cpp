@@ -35,6 +35,7 @@ int main() {
 
   std::cout << "Listening on 6379 (epoll)…\n";
   std::unordered_map<int, RespParser> parsers; 
+  std::unordered_map<std::string, std::string> kv;
   for (;;) {
     int n = loop.wait(events, -1);
     if (n < 0) { if (errno == EINTR) continue; std::perror("epoll_wait"); break; }
@@ -71,7 +72,7 @@ int main() {
         parsers.erase(fd);
         continue;
       }
-
+      //有数据进来，处理并回复
       if (evs & EPOLLIN) {
         char buf[4096];
 
@@ -130,7 +131,26 @@ int main() {
           } else if (argv[0] == "ECHO") {
             if (argv.size() == 2) append_bulk(argv[1]);
             else reply += "-ERR wrong number of arguments for 'ECHO'\r\n";
-          } else {
+          } else if(argv[0] == "SET") {
+            if(argv.size() == 3) {
+              kv[argv[1]] = argv[2];
+              reply += "+OK\r\n";
+            } else {
+              reply += "-ERR wrong number of arguments for 'SET'\r\n";
+            }
+          } else if (argv[0] == "GET") {
+              if (argv.size() == 2) {
+                  auto it = kv.find(argv[1]);
+                  if (it == kv.end()) {
+                    reply += "$-1\r\n";  // null bulk（不存在）
+                  } else {
+                    const std::string& v = it->second;
+                    append_bulk(v);
+                  }
+                } else {
+                  reply += "-ERR wrong number of arguments for 'GET'\r\n";
+                }
+          }else {
             reply += "-ERR unknown command\r\n";
           }
         }
