@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <chrono>
+#include <cstdlib>
 
 #include "net/Acceptor.h"
 #include "net/EventLoop.h"
@@ -36,6 +38,14 @@ int main() {
   std::cout << "Listening on 6379 (epoll)…\n";
   std::unordered_map<int, RespParser> parsers; 
   std::unordered_map<std::string, std::string> kv;
+  std::unordered_map<std::string, long long> expires; //{key,timeout}
+
+  //当前时间->纪元时间
+  auto now_ms = []()->long long {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+  };
+
   for (;;) {
     int n = loop.wait(events, -1);
     if (n < 0) { if (errno == EINTR) continue; std::perror("epoll_wait"); break; }
@@ -132,11 +142,46 @@ int main() {
             if (argv.size() == 2) append_bulk(argv[1]);
             else reply += "-ERR wrong number of arguments for 'ECHO'\r\n";
           } else if(argv[0] == "SET") {
-            if(argv.size() == 3) {
-              kv[argv[1]] = argv[2];
-              reply += "+OK\r\n";
-            } else {
+            if(argv.size() < 3) {
               reply += "-ERR wrong number of arguments for 'SET'\r\n";
+            } else {
+              bool keep_ttl = false;
+              long long ttl_ms = -1;
+
+              size_t k = 3;
+              bool syntax_ok = true;
+              //解析expires time
+              while (k < argv.size()) {
+                std::string opt = argv[k];
+                for(char& ch:opt) ch = std::toupper((unsigned char) ch);
+
+                if(opt == "EX" || opt == "PX") {
+                  if((k +1) >= argv.size()) {reply += "-ERR syntax error\r\n"; syntax_ok = false; break; }
+                  char* endp = nullptr;
+                  long long n = std::strtoll(argv[k+1].c_str(), &endp, 10);
+                  if (*endp != '\0' || n <= 0) { reply += "-ERR value is not an integer or out of range\r\n"; syntax_ok = false; break; }
+                  if (ttl_ms != -1) { reply += "-ERR syntax error\r\n"; syntax_ok = false; break; } // 不能同时给 EX 和 PX
+                  ttl_ms = (opt == "EX") ? (n * 1000LL) : n;
+                  k += 2; // 消费参数和值
+                } else if (opt == "KEEPTTL") {
+                  keep_ttl = true;
+                  k += 1;
+                } else {
+                  reply += "-ERR syntax error\r\n";
+                  syntax_ok = false;
+                  break;
+                }
+              }
+
+              if(syntax_ok) {
+                kv[argv[1]] = argv[2];
+                if(ttl_ms > 0) {
+                  expires[argv[1]] = now_ms() + ttl_ms;
+                } else if (!keep_ttl) {
+                  expires.erase(argv[1]); 
+                }
+                reply += "+OK\r\n";
+              }
             }
           } else if (argv[0] == "GET") {
               if (argv.size() == 2) {
@@ -144,8 +189,16 @@ int main() {
                   if (it == kv.end()) {
                     reply += "$-1\r\n";  // null bulk（不存在）
                   } else {
-                    const std::string& v = it->second;
-                    append_bulk(v);
+                    //过期检查
+                    auto eit = expires.find(argv[1]);
+                    if(eit != expires.end() && eit->second <= now_ms()) {
+                      kv.erase(it);
+                      expires.erase(eit);
+                      reply += "$-1\r\n";
+                    } else {
+                      const std::string& v = it->second;
+                      append_bulk(v);
+                    }
                   }
                 } else {
                   reply += "-ERR wrong number of arguments for 'GET'\r\n";
